@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 
+import 'controllers/app_controller.dart';
+import 'models/training_plan.dart';
 import 'models/training_analysis.dart';
 import 'services/mock_ai_analysis_service.dart';
 
@@ -22,38 +24,239 @@ const _blue = Color(0xFF0878F9);
 const _green = Color(0xFF20B868);
 const _orange = Color(0xFFFF6B35);
 
-class PingPongCoachApp extends StatelessWidget {
+class PingPongCoachApp extends StatefulWidget {
   const PingPongCoachApp({super.key});
 
   @override
+  State<PingPongCoachApp> createState() => _PingPongCoachAppState();
+}
+
+class _PingPongCoachAppState extends State<PingPongCoachApp> {
+  late final AppController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AppController()..initialize();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '卓练 AI',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: _background,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _blue,
-          brightness: Brightness.light,
-          surface: Colors.white,
-        ),
-        textTheme: Theme.of(context).textTheme.apply(
-          bodyColor: _ink,
-          displayColor: _ink,
-          fontFamily: '.SF Pro Display',
-        ),
-        splashFactory: NoSplash.splashFactory,
-        highlightColor: Colors.transparent,
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => MaterialApp(
+        title: 'iTT',
+        debugShowCheckedModeBanner: false,
+        themeMode: _controller.themeMode,
+        theme: _theme(Brightness.light),
+        darkTheme: _theme(Brightness.dark),
+        home: !_controller.initialized
+            ? const AppLaunchScreen()
+            : _controller.signedIn
+            ? AppShell(controller: _controller)
+            : AuthPage(controller: _controller),
       ),
-      home: const AppShell(),
+    );
+  }
+
+  ThemeData _theme(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    return ThemeData(
+      useMaterial3: true,
+      brightness: brightness,
+      scaffoldBackgroundColor: dark ? const Color(0xFF0E1115) : _background,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _blue,
+        brightness: brightness,
+        surface: dark ? const Color(0xFF1B2026) : Colors.white,
+      ),
+      textTheme: ThemeData(brightness: brightness).textTheme.apply(
+        bodyColor: dark ? const Color(0xFFF2F4F6) : _ink,
+        displayColor: dark ? const Color(0xFFF2F4F6) : _ink,
+        fontFamily: '.SF Pro Display',
+      ),
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: Colors.transparent,
+    );
+  }
+}
+
+class AppLaunchScreen extends StatelessWidget {
+  const AppLaunchScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BrandMark(size: 76),
+            SizedBox(height: 18),
+            Text(
+              'iTT',
+              style: TextStyle(fontSize: 31, fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: 24),
+            CupertinoActivityIndicator(radius: 13),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AuthPage extends StatefulWidget {
+  const AuthPage({super.key, required this.controller});
+  final AppController controller;
+
+  @override
+  State<AuthPage> createState() => _AuthPageState();
+}
+
+class _AuthPageState extends State<AuthPage> {
+  final _accountController = TextEditingController();
+  final _nameController = TextEditingController(text: 'MoMo');
+  bool _registering = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit({bool demo = false}) async {
+    final account = demo ? 'demo@itt.local' : _accountController.text.trim();
+    final digits = account.replaceAll(RegExp(r'\D'), '');
+    if (account.isEmpty || (!account.contains('@') && digits.length < 6)) {
+      setState(() => _error = '请输入手机号或邮箱号');
+      return;
+    }
+    await widget.controller.signIn(
+      account: account,
+      name: _registering ? _nameController.text : 'MoMo',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(28, 58, 28, 32),
+          children: [
+            const Center(child: BrandMark(size: 92)),
+            const SizedBox(height: 22),
+            const Center(
+              child: Text(
+                'iTT',
+                style: TextStyle(fontSize: 38, fontWeight: FontWeight.w900),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                _registering ? '创建你的本地训练档案' : '登录以继续训练',
+                style: const TextStyle(color: _muted, fontSize: 16),
+              ),
+            ),
+            const SizedBox(height: 38),
+            if (_registering) ...[
+              AuthTextField(
+                controller: _nameController,
+                placeholder: '用户名',
+                icon: CupertinoIcons.person_fill,
+              ),
+              const SizedBox(height: 12),
+            ],
+            AuthTextField(
+              controller: _accountController,
+              placeholder: '手机号或邮箱号',
+              icon: CupertinoIcons.mail_solid,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: const TextStyle(color: _orange, fontSize: 13),
+              ),
+            ],
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: _registering ? '直接注册并使用' : '登录',
+              icon: CupertinoIcons.arrow_right_circle_fill,
+              onTap: _submit,
+            ),
+            const SizedBox(height: 12),
+            SecondaryButton(
+              label: _registering ? '已有账号，去登录' : '没有账号，直接注册',
+              icon: CupertinoIcons.person_badge_plus,
+              onTap: () => setState(() {
+                _registering = !_registering;
+                _error = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+            CupertinoButton(
+              onPressed: () => _submit(demo: true),
+              child: const Text('以 MoMo 身份快速体验'),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '当前版本不连接账号服务器，不发送验证码。账号和训练计划只保存在本机。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AuthTextField extends StatelessWidget {
+  const AuthTextField({
+    super.key,
+    required this.controller,
+    required this.placeholder,
+    required this.icon,
+  });
+  final TextEditingController controller;
+  final String placeholder;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoTextField(
+      controller: controller,
+      placeholder: placeholder,
+      prefix: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Icon(icon, color: _muted, size: 20),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: .18),
+        ),
+      ),
     );
   }
 }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({super.key, required this.controller});
+  final AppController controller;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -94,12 +297,18 @@ class _AppShellState extends State<AppShell> {
 
   void _addRecord(TrainingRecord record) {
     setState(() => _records.insert(0, record));
+    final isForehand = record.analysis.strokeName.contains('正手');
+    widget.controller.addRecommendedPlan(
+      title: isForehand ? '正手稳定性强化' : '动作还原专项',
+      detail: 'AI 推荐 · ${record.analysis.suggestions.first}',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       HomePage(
+        controller: widget.controller,
         records: _records,
         onStartTraining: () => _openCoach(capture: true),
         onOpenCoach: _openCoach,
@@ -124,12 +333,14 @@ class _AppShellState extends State<AppShell> {
 class HomePage extends StatelessWidget {
   const HomePage({
     super.key,
+    required this.controller,
     required this.records,
     required this.onStartTraining,
     required this.onOpenCoach,
     required this.onOpenRecords,
   });
 
+  final AppController controller;
   final List<TrainingRecord> records;
   final VoidCallback onStartTraining;
   final VoidCallback onOpenCoach;
@@ -144,13 +355,39 @@ class HomePage extends StatelessWidget {
         children: [
           Row(
             children: [
-              const BrandMark(size: 48),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  CupertinoPageRoute<void>(
+                    builder: (context) =>
+                        UserProfilePage(controller: controller),
+                  ),
+                ),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1A000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset('assets/user.JPG', fit: BoxFit.cover),
+                ),
+              ),
               const Spacer(),
-              RoundIconButton(icon: CupertinoIcons.search, onTap: () {}),
-              const SizedBox(width: 10),
               RoundIconButton(
-                icon: CupertinoIcons.person_crop_circle,
-                onTap: () {},
+                icon: CupertinoIcons.gear_alt_fill,
+                onTap: () => Navigator.of(context).push(
+                  CupertinoPageRoute<void>(
+                    builder: (context) => SettingsPage(controller: controller),
+                  ),
+                ),
               ),
             ],
           ),
@@ -285,28 +522,51 @@ class HomePage extends StatelessWidget {
           else
             EmptyCard(onTap: onStartTraining),
           const SizedBox(height: 30),
-          const SectionHeader(title: '今日训练计划'),
+          SectionHeader(
+            title: '今日训练计划',
+            trailing: '新建',
+            onTap: () => Navigator.of(context).push(
+              CupertinoPageRoute<void>(
+                builder: (context) =>
+                    CreateTrainingPlanPage(controller: controller),
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
           AppCard(
             child: Column(
               children: [
-                const TrainingPlanRow(
-                  color: Color(0xFFE9F4FF),
-                  iconColor: _blue,
-                  icon: CupertinoIcons.scope,
-                  title: '正手定点攻球',
-                  subtitle: '5 组 × 30 球',
-                  done: true,
-                ),
-                const Divider(height: 1, indent: 58, color: Color(0xFFE9ECF0)),
-                TrainingPlanRow(
-                  color: const Color(0xFFFFF0E8),
-                  iconColor: _orange,
-                  icon: CupertinoIcons.arrow_2_circlepath,
-                  title: '正反手转换',
-                  subtitle: '4 组 × 2 分钟',
-                  onTap: onOpenCoach,
-                ),
+                for (
+                  var index = 0;
+                  index < controller.plans.length;
+                  index++
+                ) ...[
+                  TrainingPlanRow(
+                    color:
+                        controller.plans[index].origin == TrainingPlanOrigin.ai
+                        ? const Color(0xFFE9F4FF)
+                        : const Color(0xFFFFF0E8),
+                    iconColor:
+                        controller.plans[index].origin == TrainingPlanOrigin.ai
+                        ? _blue
+                        : _orange,
+                    icon:
+                        controller.plans[index].origin == TrainingPlanOrigin.ai
+                        ? CupertinoIcons.sparkles
+                        : CupertinoIcons.pencil,
+                    title: controller.plans[index].title,
+                    subtitle: controller.plans[index].detail,
+                    done: controller.plans[index].completed,
+                    onTap: () =>
+                        controller.togglePlan(controller.plans[index].id),
+                  ),
+                  if (index != controller.plans.length - 1)
+                    const Divider(
+                      height: 1,
+                      indent: 58,
+                      color: Color(0xFFE9ECF0),
+                    ),
+                ],
               ],
             ),
           ),
@@ -314,6 +574,632 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
+}
+
+class UserProfilePage extends StatelessWidget {
+  const UserProfilePage({super.key, required this.controller});
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
+          children: [
+            SubpageHeader(title: '用户', onBack: () => Navigator.pop(context)),
+            const SizedBox(height: 28),
+            Center(
+              child: Container(
+                width: 104,
+                height: 104,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 4),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 22,
+                      offset: Offset(0, 9),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset('assets/user.JPG', fit: BoxFit.cover),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Text(
+                controller.displayName,
+                style: const TextStyle(
+                  fontSize: 27,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Center(
+              child: Text('用数据看见每一次进步', style: TextStyle(color: _muted)),
+            ),
+            const SizedBox(height: 30),
+            const AppCard(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ProfileStat(value: '3', label: '训练次数'),
+                  ),
+                  SizedBox(
+                    height: 46,
+                    child: VerticalDivider(color: Color(0xFFE5E9ED)),
+                  ),
+                  Expanded(
+                    child: ProfileStat(value: '84', label: '平均得分'),
+                  ),
+                  SizedBox(
+                    height: 46,
+                    child: VerticalDivider(color: Color(0xFFE5E9ED)),
+                  ),
+                  Expanded(
+                    child: ProfileStat(value: '2', label: '连续天数'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 26),
+            const SectionHeader(title: '训练档案'),
+            const SizedBox(height: 14),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  ProfileInfoRow(
+                    icon: CupertinoIcons.mail_solid,
+                    title: '账号',
+                    value: controller.identifier,
+                  ),
+                  const Divider(
+                    height: 1,
+                    indent: 68,
+                    color: Color(0xFFE9ECF0),
+                  ),
+                  const ProfileInfoRow(
+                    icon: CupertinoIcons.person_fill,
+                    title: '持拍方式',
+                    value: '右手横拍',
+                  ),
+                  Divider(height: 1, indent: 68, color: Color(0xFFE9ECF0)),
+                  ProfileInfoRow(
+                    icon: CupertinoIcons.sportscourt_fill,
+                    title: '主要打法',
+                    value: '弧圈结合快攻',
+                  ),
+                  Divider(height: 1, indent: 68, color: Color(0xFFE9ECF0)),
+                  ProfileInfoRow(
+                    icon: CupertinoIcons.scope,
+                    title: '当前目标',
+                    value: '提升正手稳定性',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key, required this.controller});
+  final AppController controller;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  bool _notifications = true;
+  bool _saveVideos = true;
+  bool _cellularAnalysis = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
+          children: [
+            SubpageHeader(title: '设置', onBack: () => Navigator.pop(context)),
+            const SizedBox(height: 28),
+            const SectionHeader(title: '外观'),
+            const SizedBox(height: 14),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '显示模式',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: CupertinoSlidingSegmentedControl<ThemeMode>(
+                      groupValue: widget.controller.themeMode,
+                      children: const {
+                        ThemeMode.light: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 7,
+                          ),
+                          child: Text('白天'),
+                        ),
+                        ThemeMode.dark: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 7,
+                          ),
+                          child: Text('黑夜'),
+                        ),
+                        ThemeMode.system: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 7,
+                          ),
+                          child: Text('跟随系统'),
+                        ),
+                      },
+                      onValueChanged: (value) {
+                        if (value != null) {
+                          widget.controller.setThemeMode(value);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 26),
+            const SectionHeader(title: '训练与分析'),
+            const SizedBox(height: 14),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  SettingsSwitchRow(
+                    icon: CupertinoIcons.bell_fill,
+                    color: _orange,
+                    title: '训练提醒',
+                    value: _notifications,
+                    onChanged: (value) =>
+                        setState(() => _notifications = value),
+                  ),
+                  const Divider(
+                    height: 1,
+                    indent: 68,
+                    color: Color(0xFFE9ECF0),
+                  ),
+                  SettingsSwitchRow(
+                    icon: CupertinoIcons.video_camera_solid,
+                    color: _blue,
+                    title: '保留原始视频',
+                    value: _saveVideos,
+                    onChanged: (value) => setState(() => _saveVideos = value),
+                  ),
+                  const Divider(
+                    height: 1,
+                    indent: 68,
+                    color: Color(0xFFE9ECF0),
+                  ),
+                  SettingsSwitchRow(
+                    icon: CupertinoIcons.antenna_radiowaves_left_right,
+                    color: _green,
+                    title: '使用蜂窝网络分析',
+                    value: _cellularAnalysis,
+                    onChanged: (value) =>
+                        setState(() => _cellularAnalysis = value),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 26),
+            const SectionHeader(title: '通用'),
+            const SizedBox(height: 14),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  const SettingsLinkRow(
+                    icon: CupertinoIcons.lock_shield_fill,
+                    color: Color(0xFF7758E8),
+                    title: '隐私与数据',
+                  ),
+                  const Divider(
+                    height: 1,
+                    indent: 68,
+                    color: Color(0xFFE9ECF0),
+                  ),
+                  const SettingsLinkRow(
+                    icon: CupertinoIcons.question_circle_fill,
+                    color: _blue,
+                    title: '帮助与反馈',
+                  ),
+                  const Divider(
+                    height: 1,
+                    indent: 68,
+                    color: Color(0xFFE9ECF0),
+                  ),
+                  SettingsLinkRow(
+                    icon: CupertinoIcons.info_circle_fill,
+                    color: _muted,
+                    title: '关于 iTT',
+                    value: '1.0.0',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (context) => const AboutIttPage(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 26),
+            SecondaryButton(
+              label: '退出当前账号',
+              icon: CupertinoIcons.square_arrow_left,
+              onTap: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                widget.controller.signOut();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AboutIttPage extends StatelessWidget {
+  const AboutIttPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      bottom: false,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
+        children: [
+          SubpageHeader(title: '关于 iTT', onBack: () => Navigator.pop(context)),
+          const SizedBox(height: 28),
+          const AppCard(
+            child: Column(
+              children: [
+                Icon(CupertinoIcons.sportscourt_fill, size: 52, color: _blue),
+                SizedBox(height: 14),
+                Text(
+                  'iTT 乒乓球智能训练',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                SizedBox(height: 6),
+                Text('版本 1.0.0', style: TextStyle(color: _muted)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 26),
+          const SectionHeader(title: '法律与许可'),
+          const SizedBox(height: 14),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: SettingsLinkRow(
+              icon: CupertinoIcons.chevron_left_slash_chevron_right,
+              color: _blue,
+              title: '开源软件许可',
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'iTT',
+                applicationVersion: '1.0.0',
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class CreateTrainingPlanPage extends StatefulWidget {
+  const CreateTrainingPlanPage({super.key, required this.controller});
+  final AppController controller;
+
+  @override
+  State<CreateTrainingPlanPage> createState() => _CreateTrainingPlanPageState();
+}
+
+class _CreateTrainingPlanPageState extends State<CreateTrainingPlanPage> {
+  final _titleController = TextEditingController();
+  final _detailController = TextEditingController(text: '4 组 × 2 分钟');
+  int _category = 0;
+
+  static const _categories = ['正手', '反手', '发球', '步法'];
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _detailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) return;
+    await widget.controller.addPlan(
+      TrainingPlan(
+        id: 'user-${DateTime.now().microsecondsSinceEpoch}',
+        title: title,
+        detail: '${_categories[_category]} · ${_detailController.text.trim()}',
+        origin: TrainingPlanOrigin.user,
+      ),
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      bottom: false,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
+        children: [
+          SubpageHeader(title: '新建计划', onBack: () => Navigator.pop(context)),
+          const SizedBox(height: 30),
+          const Text(
+            '训练名称',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 9),
+          AuthTextField(
+            controller: _titleController,
+            placeholder: '例如：反手拧拉强化',
+            icon: CupertinoIcons.pencil,
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            '训练类型',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 9),
+          CupertinoSlidingSegmentedControl<int>(
+            groupValue: _category,
+            children: {
+              for (var i = 0; i < _categories.length; i++)
+                i: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(_categories[i]),
+                ),
+            },
+            onValueChanged: (value) {
+              if (value != null) setState(() => _category = value);
+            },
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            '训练量',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 9),
+          AuthTextField(
+            controller: _detailController,
+            placeholder: '例如：5 组 × 30 球',
+            icon: CupertinoIcons.timer,
+          ),
+          const SizedBox(height: 30),
+          PrimaryButton(
+            label: '保存训练计划',
+            icon: CupertinoIcons.check_mark_circled_solid,
+            onTap: _save,
+          ),
+          const SizedBox(height: 14),
+          const AppCard(
+            color: Color(0xFFEAF5FF),
+            child: Text(
+              '自建计划会保存在本机。完成新的动作分析后，AI 推荐计划也会自动加入首页。',
+              style: TextStyle(color: _muted, height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class SubpageHeader extends StatelessWidget {
+  const SubpageHeader({super.key, required this.title, required this.onBack});
+  final String title;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      RoundIconButton(icon: CupertinoIcons.chevron_left, onTap: onBack),
+      const SizedBox(width: 14),
+      Text(
+        title,
+        style: const TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -1,
+        ),
+      ),
+    ],
+  );
+}
+
+class ProfileStat extends StatelessWidget {
+  const ProfileStat({super.key, required this.value, required this.label});
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Text(
+        value,
+        style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          color: _muted,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
+}
+
+class ProfileInfoRow extends StatelessWidget {
+  const ProfileInfoRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+  final IconData icon;
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+    child: Row(
+      children: [
+        Icon(icon, color: _blue, size: 24),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(color: _muted, fontWeight: FontWeight.w600),
+        ),
+      ],
+    ),
+  );
+}
+
+class SettingsSwitchRow extends StatelessWidget {
+  const SettingsSwitchRow({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+  final IconData icon;
+  final Color color;
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => _SettingsRowLayout(
+    icon: icon,
+    color: color,
+    title: title,
+    trailing: CupertinoSwitch(
+      value: value,
+      activeTrackColor: _green,
+      onChanged: onChanged,
+    ),
+  );
+}
+
+class SettingsLinkRow extends StatelessWidget {
+  const SettingsLinkRow({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.title,
+    this.value,
+    this.onTap,
+  });
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String? value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: _SettingsRowLayout(
+      icon: icon,
+      color: color,
+      title: title,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (value != null)
+            Text(value!, style: const TextStyle(color: _muted)),
+          const SizedBox(width: 7),
+          const Icon(
+            CupertinoIcons.chevron_right,
+            color: Color(0xFFAAB1B8),
+            size: 17,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SettingsRowLayout extends StatelessWidget {
+  const _SettingsRowLayout({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.trailing,
+  });
+  final IconData icon;
+  final Color color;
+  final String title;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+    child: Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+        ),
+        trailing,
+      ],
+    ),
+  );
 }
 
 class _CaptureIcon extends StatelessWidget {
@@ -442,8 +1328,8 @@ class _TrendIcon extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     width: 48,
     height: 48,
-    decoration: const BoxDecoration(
-      color: Colors.white,
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
       shape: BoxShape.circle,
     ),
     child: const Icon(CupertinoIcons.chart_bar_square_fill, color: _blue),
@@ -1017,9 +1903,13 @@ class GlassBottomNavigation extends StatelessWidget {
             height: 76,
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .92),
+              color: Theme.of(context).colorScheme.surface
+                  .withValues(alpha: .94),
               borderRadius: BorderRadius.circular(34),
-              border: Border.all(color: Colors.white, width: 1.5),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.surface,
+                width: 1.5,
+              ),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x1F26313C),
@@ -1039,7 +1929,7 @@ class GlassBottomNavigation extends StatelessWidget {
                       duration: const Duration(milliseconds: 220),
                       decoration: BoxDecoration(
                         color: selected
-                            ? const Color(0xFFE7EAED)
+                            ? _blue.withValues(alpha: .12)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(28),
                       ),
@@ -1048,7 +1938,9 @@ class GlassBottomNavigation extends StatelessWidget {
                         children: [
                           Icon(
                             items[index].$1,
-                            color: selected ? _blue : _ink,
+                            color: selected
+                                ? _blue
+                                : Theme.of(context).colorScheme.onSurface,
                             size: 24,
                           ),
                           const SizedBox(height: 4),
@@ -1056,7 +1948,9 @@ class GlassBottomNavigation extends StatelessWidget {
                             items[index].$2,
                             style: TextStyle(
                               fontSize: 12,
-                              color: selected ? _blue : _ink,
+                              color: selected
+                                  ? _blue
+                                  : Theme.of(context).colorScheme.onSurface,
                               fontWeight: selected
                                   ? FontWeight.w700
                                   : FontWeight.w600,
@@ -1081,11 +1975,11 @@ class AppCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(20),
-    this.color = Colors.white,
+    this.color,
   });
   final Widget child;
   final EdgeInsets padding;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -1093,7 +1987,7 @@ class AppCard extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: color,
+        color: color ?? Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(26),
       ),
       child: child,
@@ -1155,11 +2049,15 @@ class RoundIconButton extends StatelessWidget {
       child: Container(
         width: 48,
         height: 48,
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: _ink, size: 24),
+        child: Icon(
+          icon,
+          color: Theme.of(context).colorScheme.onSurface,
+          size: 24,
+        ),
       ),
     );
   }
@@ -1670,14 +2568,14 @@ class PrimaryButton extends StatelessWidget {
   });
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
       height: 56,
       decoration: BoxDecoration(
-        color: _blue,
+        color: onTap == null ? const Color(0xFFB8C0C8) : _blue,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1941,9 +2839,9 @@ class RecordDetailSheet extends StatelessWidget {
     maxChildSize: .92,
     minChildSize: .55,
     builder: (context, controller) => Container(
-      decoration: const BoxDecoration(
-        color: _background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
       ),
       child: ListView(
         controller: controller,
